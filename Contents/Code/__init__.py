@@ -65,17 +65,30 @@ class YahooMoviesAgent(Agent.Movies):
 				for movie in html.xpath('//h3[@class="title"]/a[contains(@href, "movies.yahoo.com/movie/")]'):
 					id = movie.get('href').strip('/').split('/')[-1]
 					title = ''.join(movie.xpath('.//text()'))
-					year = None
+					year = 0
 					score = 100
 
 					if title[-6:-5] == '(' and title[-1:] == ')':
 						(title, year) = title.rstrip(')').rsplit(' (', 1)
 						year = int(year)
 
-					score = score - abs(String.LevenshteinDistance(id, self.movie_guid(media.name)))
+					# Strip the year off the id (if it's there) when comparing with our own created id
+					if media.year and id.endswith('-%s' % media.year):
+						id_compare = id.rsplit('-',1)[0]
+					else:
+						id_compare = id
 
-					if media.year and year:
-						score = score - abs(int(media.year) - year)
+					# Use difference between the 2 strings to subtract points from the score
+					score = score - abs(String.LevenshteinDistance(id_compare, self.movie_guid(media.name)))
+
+					# Compare years. Give bonus if year difference is 0 or 1. Otherwise subtract points based on the difference in years
+					if media.year and int(media.year) > 1900 and year > 1900:
+						year_diff = abs(int(media.year) - year)
+
+						if year_diff <= 1:
+							score = score + 10
+						else:
+							score = score - (2*year_diff)
 
 					Log("Adding: %s (%d); score: %d" % (title, year, score))
 					results.Append(MetadataSearchResult(
@@ -163,31 +176,43 @@ class YahooMoviesAgent(Agent.Movies):
 				pass
 
 			# Posters
-			try:
+			if metadata.year >= 1980:
 				current_posters = [] # Keep track of available posters
-				index = 0
-				poster_html = HTML.ElementFromURL(JB_POSTER_YEAR % (metadata.year, metadata.id), headers=REQUEST_HEADERS, sleep=2.0)
 
-				for url in reversed(poster_html.xpath('//img[contains(@alt, "Movie Posters")]/@src')):
-					index = index + 1
+				try:
+					index = 0
 
-					if not url.startswith('http://'):
-						url = 'http://www.joblo.com%s' % url
+					if metadata.id.split('-')[-1].isdigit():
+						id = metadata.id.rsplit('-',1)[0]
+					else:
+						id = metadata.id
 
-					preview_url = url.replace('/thumb/', '/large/')
-					poster_url = url.replace('/thumb/', '/full/')
-					current_posters.append(poster_url)
+					poster_data = HTTP.Request(JB_POSTER_YEAR % (metadata.year, id), headers=REQUEST_HEADERS, sleep=2.0).content
+					if 'meta http-equiv="Refresh"' in poster_data:
+						poster_data = HTTP.Request(JB_POSTER_YEAR % (metadata.year, self.movie_guid(metadata.title.split(': ')[0])), headers=REQUEST_HEADERS, sleep=2.0).content
 
-					if poster_url not in metadata.posters:
-						preview = HTTP.Request(preview_url, headers=REQUEST_HEADERS, sleep=2.0).content
-						metadata.posters[poster_url] = Proxy.Preview(preview, sort_order=index)
+					poster_html = HTML.ElementFromString(poster_data)
 
-				# Remove unavailable posters
-				for key in metadata.posters.keys():
-					if key not in current_posters:
-						del metadata.posters[key]
-			except:
-				pass
+					for url in reversed(poster_html.xpath('//img[contains(@alt, "Movie Posters")]/@src')):
+						index = index + 1
+
+						if not url.startswith('http://'):
+							url = 'http://www.joblo.com%s' % url
+
+						preview_url = url.replace('/thumb/', '/large/')
+						poster_url = url.replace('/thumb/', '/full/')
+						current_posters.append(poster_url)
+
+						if poster_url not in metadata.posters:
+							preview = HTTP.Request(preview_url, headers=REQUEST_HEADERS, sleep=2.0).content
+							metadata.posters[poster_url] = Proxy.Preview(preview, sort_order=index)
+
+					# Remove unavailable posters
+					for key in metadata.posters.keys():
+						if key not in current_posters:
+							del metadata.posters[key]
+				except:
+					pass
 
 
 	def movie_guid(self, title):
