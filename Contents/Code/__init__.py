@@ -1,3 +1,5 @@
+import struct
+
 YM_MOVIE_URL = 'http://movies.yahoo.com/movie/%s/production-details.html'
 YM_SEARCH_URL = 'http://movies.search.yahoo.com/search?p=%s&section=listing'
 JB_POSTER_YEAR = 'http://www.joblo.com/upcomingmovies/movieindex.php?year=%d&show_all=true'
@@ -189,14 +191,18 @@ class YahooMoviesAgent(Agent.Movies):
 
 					if poster_url not in metadata.posters:
 						index = index + 1
-						preview_img = HTTP.Request(preview_url, headers=REQUEST_HEADERS, sleep=2.0).content
-						metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+						preview_img = self.poster_check(preview_url)
+
+						if preview_img:
+							metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
 
 			if metadata.year >= 1980:
 				html = HTML.ElementFromURL(JB_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
+				details_url = html.xpath('//a[contains(@href, "%s")]/img/parent::a/@href' % metadata.id)
 
-				id = self.movie_guid(metadata.title, True)
-				details_url = html.xpath('//a[contains(translate(@href, "-", ""), "%s")]/img/parent::a/@href' % id)
+				if len(details_url) < 1:
+					id = self.movie_guid(metadata.title, True)
+					details_url = html.xpath('//a[contains(translate(@href, "-", ""), "%s")]/img/parent::a/@href' % id)
 
 				if len(details_url) < 1 and ': ' in metadata.title:
 					id = self.movie_guid(metadata.title.split(': ')[0], True)
@@ -210,8 +216,6 @@ class YahooMoviesAgent(Agent.Movies):
 					poster_html = HTML.ElementFromURL(details_url, headers=REQUEST_HEADERS, sleep=2.0)
 
 					for url in reversed(poster_html.xpath('//img[contains(@alt, "Movie Posters")]/@src')):
-						index = index + 1
-
 						if not url.startswith('http://'):
 							url = 'http://www.joblo.com%s' % url
 
@@ -220,8 +224,11 @@ class YahooMoviesAgent(Agent.Movies):
 						current_posters.append(poster_url)
 
 						if poster_url not in metadata.posters:
-							preview = HTTP.Request(preview_url, headers=REQUEST_HEADERS, sleep=2.0).content
-							metadata.posters[poster_url] = Proxy.Preview(preview, sort_order=index)
+							preview_img = self.poster_check(preview_url)
+
+							if preview_img:
+								index = index + 1
+								metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
 
 				# Remove unavailable posters
 				for key in metadata.posters.keys():
@@ -253,3 +260,21 @@ class YahooMoviesAgent(Agent.Movies):
 		title = String.Quote(title, usePlus=True)
 		url = YM_SEARCH_URL % title
 		return url
+
+
+	def poster_check(self, preview_url):
+
+		preview_img = HTTP.Request(preview_url, headers=REQUEST_HEADERS, sleep=2.0).content
+
+		try:
+			i = preview_img.find('\xff\xc0') + 5;
+			y, x = struct.unpack('>HH', preview_img[i:i+4])
+
+			if x > y:
+				return None
+			elif float(x)/float(y) < 0.66:
+				return None
+			else:
+				return preview_img
+		except:
+			return None
