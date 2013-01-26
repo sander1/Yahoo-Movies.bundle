@@ -3,6 +3,7 @@ import struct
 YM_MOVIE_URL = 'http://movies.yahoo.com/movie/%s/production-details.html'
 YM_SEARCH_URL = 'http://movies.search.yahoo.com/search?p=%s&section=listing'
 JB_POSTER_YEAR = 'http://www.joblo.com/upcomingmovies/movieindex.php?year=%d&show_all=true'
+IA_POSTER_YEAR = 'http://www.impawards.com/%d/std.html'
 
 REQUEST_HEADERS = {
 	'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:18.0) Gecko/20100101 Firefox/18.0',
@@ -16,26 +17,27 @@ REQUEST_HEADERS = {
 RE_TITLE_URL = Regex('[^a-z0-9 ]')
 RE_DURATION = Regex('(?P<hours>\d+) hours?( (?P<minutes>\d+) minutes?)?')
 RE_JB_FILTER = Regex('\-(banner|brazil|french|int|japanese|quad|russian)\-')
+
+CACHE_TIME = 8640000 # 100 days
 DEBUG = False
 
 ####################################################################################################
 def Start():
 
-	HTTP.CacheTime = CACHE_1MONTH
+	HTTP.CacheTime = CACHE_TIME
 
 	if DEBUG:
 		Dict.Reset()
 
 	now = int(Datetime.TimestampFromDatetime(Datetime.Now()))
 	if 'created' in Dict:
-		if now - Dict['created'] > 2592000:
-			Log(" --> YM: Dict is 30 days old, resetting it")
+		if now - Dict['created'] > CACHE_TIME:
 			Dict.Reset()
 
 	if 'created' not in Dict:
 		Dict['created'] = now
-		Dict['ym'] = {}
-		Dict['jb'] = {}
+		for source in ('ym', 'jb', 'ia'): Dict[source] = {}
+		Dict.Save()
 
 ####################################################################################################
 class YahooMoviesAgent(Agent.Movies):
@@ -195,6 +197,13 @@ class YahooMoviesAgent(Agent.Movies):
 				metadata.directors.add(director)
 			except:
 				pass
+
+			# Cast
+			metadata.roles.clear()
+			for movie_role in html.xpath('//h3[text()="CAST"]/parent::div/following-sibling::div/table//tr'):
+				role = metadata.roles.new()
+				role.actor = movie_role.xpath('./td')[0].text_content()
+				role.role = movie_role.xpath('./td/text()')[0]
 
 			# Posters
 			if DEBUG:
