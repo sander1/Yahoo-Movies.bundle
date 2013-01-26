@@ -3,7 +3,6 @@ import struct
 YM_MOVIE_URL = 'http://movies.yahoo.com/movie/%s/production-details.html'
 YM_SEARCH_URL = 'http://movies.search.yahoo.com/search?p=%s&section=listing'
 JB_POSTER_YEAR = 'http://www.joblo.com/upcomingmovies/movieindex.php?year=%d&show_all=true'
-JB_POSTER_FILTER = ('-banner-', '-brazil-', '-french-', '-int-', '-japanese-', '-quad-', '-russian-')
 
 REQUEST_HEADERS = {
 	'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:18.0) Gecko/20100101 Firefox/18.0',
@@ -16,16 +15,21 @@ REQUEST_HEADERS = {
 
 RE_TITLE_URL = Regex('[^a-z0-9 ]')
 RE_DURATION = Regex('(?P<hours>\d+) hours?( (?P<minutes>\d+) minutes?)?')
+RE_JB_FILTER = Regex('\-(banner|brazil|french|int|japanese|quad|russian)\-')
+DEBUG = False
 
 ####################################################################################################
 def Start():
 
 	HTTP.CacheTime = CACHE_1MONTH
 
+	if DEBUG:
+		Dict.Reset()
+
 	now = int(Datetime.TimestampFromDatetime(Datetime.Now()))
 	if 'created' in Dict:
 		if now - Dict['created'] > 2592000:
-			Log(" --> YM: Dict is 30 days old, resetting it.")
+			Log(" --> YM: Dict is 30 days old, resetting it")
 			Dict.Reset()
 
 	if 'created' not in Dict:
@@ -193,6 +197,10 @@ class YahooMoviesAgent(Agent.Movies):
 				pass
 
 			# Posters
+			if DEBUG:
+				for key in metadata.posters.keys():
+					del metadata.posters[key]
+
 			current_posters = [] # Keep track of available posters
 			index = 0
 
@@ -292,10 +300,12 @@ class YahooMoviesAgent(Agent.Movies):
 			return None
 
 		if source == 'jb':
-			for filter in JB_POSTER_FILTER:
-				if filter in preview_url.lower():
-					self.blacklist_poster(preview_url, source, metadata_id, 'Match found in JB_POSTER_FILTER')
-					return None
+			img = preview_url.rsplit('/',1)[-1].strip('.jpg').lower()
+
+			jb_filter = RE_JB_FILTER.search(img)
+			if jb_filter:
+				self.blacklist_poster(preview_url, source, metadata_id, 'Match found in JB_POSTER_FILTER: %s' % jb_filter.group(0))
+				return None
 
 		preview_img = HTTP.Request(preview_url, headers=REQUEST_HEADERS, sleep=2.0).content
 
@@ -317,10 +327,10 @@ class YahooMoviesAgent(Agent.Movies):
 
 	def poster_blacklisted(self, url, source, metadata_id):
 
-		img = url.split('/')[-1].strip('.jpg')
+		img = url.rsplit('/',1)[-1].strip('.jpg')
 
 		if metadata_id in Dict[source] and img in Dict[source][metadata_id]:
-			Log(" --> YM: Image '%s' found on blacklist for '%s' (source: %s). Skipping." % (img, metadata_id, source))
+			Log(" --> YM: Image '%s' (source: %s) found on blacklist for '%s'. Skipping..." % (img, source, metadata_id))
 			return True
 
 		return False
@@ -328,14 +338,14 @@ class YahooMoviesAgent(Agent.Movies):
 
 	def blacklist_poster(self, url, source, metadata_id, reason='Not given'):
 
-		img = url.split('/')[-1].strip('.jpg')
+		img = url.rsplit('/',1)[-1].strip('.jpg')
 
 		if metadata_id not in Dict[source]:
 			Dict[source][metadata_id] = []
 
 		if img not in Dict[source][metadata_id]:
 			Dict[source][metadata_id].append(img)
-			Log(" --> YM: Image '%s' added to blacklist for '%s' (source: %s). Reason: %s" % (img, metadata_id, source, reason))
+			Log(" --> YM: Image '%s' (source: %s) blacklisted for '%s'. Reason: %s" % (img, source, metadata_id, reason))
 
 		Dict.Save()
 		return
