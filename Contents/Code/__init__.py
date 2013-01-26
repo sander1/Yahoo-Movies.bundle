@@ -3,6 +3,7 @@ import struct
 YM_MOVIE_URL = 'http://movies.yahoo.com/movie/%s/production-details.html'
 YM_SEARCH_URL = 'http://movies.search.yahoo.com/search?p=%s&section=listing'
 JB_POSTER_YEAR = 'http://www.joblo.com/upcomingmovies/movieindex.php?year=%d&show_all=true'
+JB_POSTER_FILTER = ('-banner-', '-brazil-', '-french-', '-int-', '-japanese-', '-quad-', '-russian-')
 
 REQUEST_HEADERS = {
 	'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:18.0) Gecko/20100101 Firefox/18.0',
@@ -20,6 +21,17 @@ RE_DURATION = Regex('(?P<hours>\d+) hours?( (?P<minutes>\d+) minutes?)?')
 def Start():
 
 	HTTP.CacheTime = CACHE_1MONTH
+
+	now = int(Datetime.TimestampFromDatetime(Datetime.Now()))
+	if 'created' in Dict:
+		if now - Dict['created'] > 2592000:
+			Log(" --> YM: Dict is 30 days old, resetting it.")
+			Dict.Reset()
+
+	if 'created' not in Dict:
+		Dict['created'] = now
+		Dict['ym'] = {}
+		Dict['jb'] = {}
 
 ####################################################################################################
 class YahooMoviesAgent(Agent.Movies):
@@ -40,7 +52,7 @@ class YahooMoviesAgent(Agent.Movies):
 				# release dates -- international movies sometimes have a US release 1 year later than
 				# the international release.
 				if abs(int(media.year) - year) <= 1:
-					Log("Adding: %s (%d); score: %d" % (title, year, score))
+					Log(" --> YM: Adding: %s (%d); score: %d" % (title, year, score))
 					results.Append(MetadataSearchResult(
 						id = self.movie_guid(media.name),
 						name = title,
@@ -61,7 +73,7 @@ class YahooMoviesAgent(Agent.Movies):
 
 				html = HTML.ElementFromURL(url, headers=REQUEST_HEADERS, cacheTime=cache_time, sleep=2.0)
 			except:
-				Log("Error fetching search data from Yahoo Movies: %s" % url)
+				Log(" --> YM: Error fetching search data from Yahoo Movies: %s" % url)
 
 			if html:
 				for movie in html.xpath('//h3[@class="title"]/a[contains(@href, "movies.yahoo.com/movie/")]'):
@@ -93,9 +105,9 @@ class YahooMoviesAgent(Agent.Movies):
 							score = score - (5 * year_diff)
 
 					if score < 0:
-						Log("Not adding: %s (%d); score: %d" % (title, year, score))
+						Log(" --> YM: Not adding: %s (%d); score: %d" % (title, year, score))
 					else:
-						Log("Adding: %s (%d); score: %d" % (title, year, score))
+						Log(" --> YM: Adding: %s (%d); score: %d" % (title, year, score))
 						results.Append(MetadataSearchResult(
 							id = id,
 							name = title,
@@ -105,7 +117,7 @@ class YahooMoviesAgent(Agent.Movies):
 						))
 
 		if len(results) == 0:
-			Log("Couldn't find a match for: %s" % String.Unquote(media.filename))
+			Log(" --> YM: Couldn't find a match for: %s" % String.Unquote(media.filename))
 
 
 	def update(self, metadata, media, lang):
@@ -114,7 +126,7 @@ class YahooMoviesAgent(Agent.Movies):
 		try:
 			html = HTML.ElementFromURL(url, headers=REQUEST_HEADERS, sleep=2.0)
 		except:
-			Log("Error fetching data from Yahoo Movies: %s" % url)
+			Log(" --> YM: Error fetching data from Yahoo Movies: %s" % url)
 
 		if html:
 			# Title, year and summary
@@ -186,20 +198,25 @@ class YahooMoviesAgent(Agent.Movies):
 
 			preview_url = html.xpath('//img[starts-with(@alt, "Poster of ") and contains(@src, "yimg.com")]/@src')
 			if len(preview_url) == 1:
-				poster_url = 'http://%s' % preview_url[0].rsplit('http://',1)[1]
+				preview_url = preview_url[0]
 
-				headers = HTTP.Request(poster_url, headers=REQUEST_HEADERS, sleep=2.0).headers
-				if 'content-length' in headers and int(headers['content-length']) > 102400:
-					current_posters.append(poster_url)
+				if not self.poster_blacklisted(preview_url, 'ym', metadata.id):
+					poster_url = 'http://%s' % preview_url.rsplit('http://',1)[1]
+					headers = HTTP.Request(poster_url, headers=REQUEST_HEADERS, sleep=2.0).headers
 
-					if poster_url not in metadata.posters:
-						preview_img = self.poster_check(preview_url)
+					if 'content-length' in headers and int(headers['content-length']) > 102400:
+						current_posters.append(poster_url)
 
-						if preview_img:
-							index = index + 1
-							metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
-						else:
-							current_posters.remove(poster_url)
+						if poster_url not in metadata.posters:
+							preview_img = self.poster_check(preview_url, 'ym', metadata.id)
+
+							if preview_img:
+								index = index + 1
+								metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+							else:
+								current_posters.remove(poster_url)
+					else:
+						self.blacklist_poster(preview_url, 'ym', metadata.id, 'Image is less than 100kb')
 
 			if metadata.year >= 1980:
 				html = HTML.ElementFromURL(JB_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
@@ -229,7 +246,7 @@ class YahooMoviesAgent(Agent.Movies):
 						current_posters.append(poster_url)
 
 						if poster_url not in metadata.posters:
-							preview_img = self.poster_check(preview_url)
+							preview_img = self.poster_check(preview_url, 'jb', metadata.id)
 
 							if preview_img:
 								index = index + 1
@@ -237,10 +254,10 @@ class YahooMoviesAgent(Agent.Movies):
 							else:
 								current_posters.remove(poster_url)
 
-				# Remove unavailable posters
-				for key in metadata.posters.keys():
-					if key not in current_posters:
-						del metadata.posters[key]
+			# Remove unavailable posters
+			for key in metadata.posters.keys():
+				if key not in current_posters:
+					del metadata.posters[key]
 
 
 	def movie_guid(self, title, strip_dashes=False):
@@ -269,10 +286,16 @@ class YahooMoviesAgent(Agent.Movies):
 		return url
 
 
-	def poster_check(self, preview_url):
+	def poster_check(self, preview_url, source, metadata_id):
 
-		if not preview_url.endswith('.jpg'):
+		if not preview_url.endswith('.jpg') or self.poster_blacklisted(preview_url, source, metadata_id):
 			return None
+
+		if source == 'jb':
+			for filter in JB_POSTER_FILTER:
+				if filter in preview_url.lower():
+					self.blacklist_poster(preview_url, source, metadata_id, 'Match found in JB_POSTER_FILTER')
+					return None
 
 		preview_img = HTTP.Request(preview_url, headers=REQUEST_HEADERS, sleep=2.0).content
 
@@ -281,10 +304,38 @@ class YahooMoviesAgent(Agent.Movies):
 			y, x = struct.unpack('>HH', preview_img[i:i+4])
 
 			if x > y:
+				self.blacklist_poster(preview_url, source, metadata_id, 'Horizontally oriented poster')
 				return None
-			elif float(x)/float(y) < 0.66:
+			if float(x)/float(y) < 0.66:
+				self.blacklist_poster(preview_url, source, metadata_id, 'Poster has strange aspect ratio')
 				return None
 			else:
 				return preview_img
 		except:
 			return None
+
+
+	def poster_blacklisted(self, url, source, metadata_id):
+
+		img = url.split('/')[-1].strip('.jpg')
+
+		if metadata_id in Dict[source] and img in Dict[source][metadata_id]:
+			Log(" --> YM: Image '%s' found on blacklist for '%s' (source: %s). Skipping." % (img, metadata_id, source))
+			return True
+
+		return False
+
+
+	def blacklist_poster(self, url, source, metadata_id, reason='Not given'):
+
+		img = url.split('/')[-1].strip('.jpg')
+
+		if metadata_id not in Dict[source]:
+			Dict[source][metadata_id] = []
+
+		if img not in Dict[source][metadata_id]:
+			Dict[source][metadata_id].append(img)
+			Log(" --> YM: Image '%s' added to blacklist for '%s' (source: %s). Reason: %s" % (img, metadata_id, source, reason))
+
+		Dict.Save()
+		return
