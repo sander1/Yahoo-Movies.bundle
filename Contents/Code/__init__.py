@@ -66,9 +66,9 @@ class YahooMoviesAgent(Agent.Movies):
 			if html:
 				for movie in html.xpath('//h3[@class="title"]/a[contains(@href, "movies.yahoo.com/movie/")]'):
 					id = movie.get('href').strip('/').split('/')[-1]
-					title = ''.join(movie.xpath('.//text()'))
+					title = movie.text_content()
 					year = 0
-					score = 100
+					score = 90
 
 					if title[-6:-5] == '(' and title[-1:] == ')':
 						(title, year) = title.rstrip(')').rsplit(' (', 1)
@@ -92,14 +92,17 @@ class YahooMoviesAgent(Agent.Movies):
 						else:
 							score = score - (5 * year_diff)
 
-					Log("Adding: %s (%d); score: %d" % (title, year, score))
-					results.Append(MetadataSearchResult(
-						id = id,
-						name = title,
-						year = year,
-						score = score,
-						lang = 'en'
-					))
+					if score < 0:
+						Log("Not adding: %s (%d); score: %d" % (title, year, score))
+					else:
+						Log("Adding: %s (%d); score: %d" % (title, year, score))
+						results.Append(MetadataSearchResult(
+							id = id,
+							name = title,
+							year = year,
+							score = score,
+							lang = 'en'
+						))
 
 		if len(results) == 0:
 			Log("Couldn't find a match for: %s" % String.Unquote(media.filename))
@@ -195,6 +198,8 @@ class YahooMoviesAgent(Agent.Movies):
 
 						if preview_img:
 							metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+						else:
+							current_posters.remove(poster_url)
 
 			if metadata.year >= 1980:
 				html = HTML.ElementFromURL(JB_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
@@ -229,6 +234,8 @@ class YahooMoviesAgent(Agent.Movies):
 							if preview_img:
 								index = index + 1
 								metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+							else:
+								current_posters.remove(poster_url)
 
 				# Remove unavailable posters
 				for key in metadata.posters.keys():
