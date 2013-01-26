@@ -193,10 +193,10 @@ class YahooMoviesAgent(Agent.Movies):
 					current_posters.append(poster_url)
 
 					if poster_url not in metadata.posters:
-						index = index + 1
 						preview_img = self.poster_check(preview_url)
 
 						if preview_img:
+							index = index + 1
 							metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
 						else:
 							current_posters.remove(poster_url)
@@ -270,6 +270,9 @@ class YahooMoviesAgent(Agent.Movies):
 
 
 	def poster_check(self, preview_url):
+
+		if not preview_url.endswith('.jpg'):
+			return None
 
 		preview_img = HTTP.Request(preview_url, headers=REQUEST_HEADERS, sleep=2.0).content
 
