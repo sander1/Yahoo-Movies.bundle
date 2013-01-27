@@ -19,7 +19,7 @@ RE_DURATION = Regex('(?P<hours>\d+) hours?( (?P<minutes>\d+) minutes?)?')
 RE_JB_FILTER = Regex('\-(banner|brazil|french|int|japanese|quad|russian)\-', Regex.IGNORECASE)
 
 CACHE_TIME = 8640000 # 100 days
-DEBUG = True
+DEBUG = False
 
 ####################################################################################################
 def Start():
