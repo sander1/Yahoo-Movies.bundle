@@ -19,7 +19,7 @@ RE_DURATION = Regex('(?P<hours>\d+) hours?( (?P<minutes>\d+) minutes?)?')
 RE_JB_FILTER = Regex('\-(banner|brazil|french|int|japanese|quad|russian)\-', Regex.IGNORECASE)
 
 CACHE_TIME = 8640000 # 100 days
-DEBUG = True
+DEBUG = False
 
 ####################################################################################################
 def Start():
@@ -60,8 +60,10 @@ class YahooMoviesAgent(Agent.Movies):
 				html = None
 
 				if int(media.year) < Datetime.Now().year - 1:
-					Dict['ym']['matches']['skip_media_guid'].append(media_guid)
+					Dict['ym']['skip_media_guid'].append(media_guid)
 					Dict.Save()
+					Log(" --> YM: Adding '%s' to skip_media_guid list" % media_guid)
+					if DEBUG: Log(Dict['ym']['skip_media_guid'])
 
 			if html:
 				title = html.xpath('//h1[@property="name"]/text()')[0]
@@ -140,7 +142,7 @@ class YahooMoviesAgent(Agent.Movies):
 							lang = 'en'
 						))
 
-		if len(results) == 0:
+		if len(results) == 0 and media.filename:
 			Log(" --> YM: Couldn't find a match for: %s" % String.Unquote(media.filename))
 
 
