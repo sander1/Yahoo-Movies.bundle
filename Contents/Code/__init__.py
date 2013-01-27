@@ -48,18 +48,26 @@ class YahooMoviesAgent(Agent.Movies):
 	name = 'Yahoo Movies'
 	languages = [Locale.Language.English]
 	primary_provider = True
+	contributes_to = ['com.plexapp.agents.imdb']
 
 	def search(self, results, media, lang):
 
-		media_guid = self.movie_guid(media.name)
+		if media.primary_metadata:
+			media_name = media.primary_metadata.title
+			media_year = media.primary_metadata.year
+		else:
+			media_name = media.name
+			media_year = media.year
 
-		if media.year and int(media.year) > 1900 and media_guid not in Dict['ym']['skip_media_guid']:
+		media_guid = self.movie_guid(media_name)
+
+		if media_year and int(media_year) > 1900 and media_guid not in Dict['ym']['skip_media_guid']:
 			try:
 				html = HTML.ElementFromURL(YM_MOVIE_URL % media_guid, headers=REQUEST_HEADERS, sleep=2.0)
 			except:
 				html = None
 
-				if int(media.year) < Datetime.Now().year - 1:
+				if int(media_year) < Datetime.Now().year - 1:
 					Dict['ym']['skip_media_guid'].append(media_guid)
 					Dict.Save()
 					Log(" --> YM: Adding '%s' to skip_media_guid list" % media_guid)
@@ -73,10 +81,10 @@ class YahooMoviesAgent(Agent.Movies):
 				# Accept a 1 year difference in release year as a good match. Yahoo Movies shows US
 				# release dates -- international movies sometimes have a US release 1 year later than
 				# the international release.
-				if abs(int(media.year) - year) <= 1:
+				if abs(int(media_year) - year) <= 1:
 					Log(" --> YM: Adding: %s (%d); score: %d (perfect match)" % (title, year, score))
 					results.Append(MetadataSearchResult(
-						id = self.movie_guid(media.name),
+						id = media_guid,
 						name = title,
 						year = year,
 						score = score,
@@ -85,12 +93,12 @@ class YahooMoviesAgent(Agent.Movies):
 
 		if len(results) == 0:
 			try:
-				if media.year and int(media.year) < Datetime.Now().year - 1:
+				if media_year and int(media_year) < Datetime.Now().year - 1:
 					cache_time = CACHE_TIME
 				else:
 					cache_time = CACHE_1DAY
 
-				html = HTML.ElementFromURL(self.search_url(media.name), headers=REQUEST_HEADERS, cacheTime=cache_time, sleep=2.0)
+				html = HTML.ElementFromURL(self.search_url(media_name), headers=REQUEST_HEADERS, cacheTime=cache_time, sleep=2.0)
 			except:
 				html = None
 				Log(" --> YM: Error fetching search data from Yahoo Movies: %s" % url)
@@ -108,20 +116,20 @@ class YahooMoviesAgent(Agent.Movies):
 						year = int(year)
 
 					# Strip the year off the id (if it's there) when comparing with our own created id
-					if media.year and id.endswith('-%s' % media.year):
+					if media_year and id.endswith('-%s' % media_year):
 						id_compare = id.rsplit('-',1)[0]
 					else:
 						id_compare = id
 
 					# Use difference between the 2 strings to subtract points from the score
-					title_diff = abs(String.LevenshteinDistance(id_compare, self.movie_guid(media.name)))
-					if DEBUG: score_explanation += '\n  Found id: %s\n    Our id: %s\ntitle_diff: %d\n     score: %d - %d = %d\n' % (id_compare, self.movie_guid(media.name), title_diff, score, title_diff, score-title_diff)
+					title_diff = abs(String.LevenshteinDistance(id_compare, media_guid))
+					if DEBUG: score_explanation += '\n  Found id: %s\n    Our id: %s\ntitle_diff: %d\n     score: %d - %d = %d\n' % (id_compare, media_guid, title_diff, score, title_diff, score-title_diff)
 					score = score - title_diff
 
 					# Compare years. Give bonus if year difference is 0 or 1. Otherwise subtract points based on the difference in years
-					if media.year and int(media.year) > 1900 and year > 1900:
-						year_diff = abs(int(media.year) - year)
-						if DEBUG: score_explanation += '\nFound year: %d\n  Our year: %s\n year_diff: %d\n     score: %d ' % (year, media.year, year_diff, score)
+					if media_year and int(media_year) > 1900 and year > 1900:
+						year_diff = abs(int(media_year) - year)
+						if DEBUG: score_explanation += '\nFound year: %d\n  Our year: %s\n year_diff: %d\n     score: %d ' % (year, media_year, year_diff, score)
 
 						if year_diff <= 1:
 							score = score + 10
@@ -142,8 +150,8 @@ class YahooMoviesAgent(Agent.Movies):
 							lang = 'en'
 						))
 
-		if len(results) == 0 and media.filename:
-			Log(" --> YM: Couldn't find a match for: %s" % String.Unquote(media.filename))
+		if len(results) == 0:
+			Log(" --> YM: Couldn't find a match for: %s" % media_name)
 
 
 	def update(self, metadata, media, lang):
