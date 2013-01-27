@@ -58,7 +58,7 @@ class YahooMoviesAgent(Agent.Movies):
 				# release dates -- international movies sometimes have a US release 1 year later than
 				# the international release.
 				if abs(int(media.year) - year) <= 1:
-					Log(" --> YM: Adding: %s (%d); score: %d" % (title, year, score))
+					Log(" --> YM: Adding: %s (%d); score: %d (perfect match)" % (title, year, score))
 					results.Append(MetadataSearchResult(
 						id = self.movie_guid(media.name),
 						name = title,
@@ -87,6 +87,7 @@ class YahooMoviesAgent(Agent.Movies):
 					title = movie.text_content()
 					year = 0
 					score = 90
+					score_explanation = ''
 
 					if title[-6:-5] == '(' and title[-1:] == ')':
 						(title, year) = title.rstrip(')').rsplit(' (', 1)
@@ -99,21 +100,26 @@ class YahooMoviesAgent(Agent.Movies):
 						id_compare = id
 
 					# Use difference between the 2 strings to subtract points from the score
-					score = score - abs(String.LevenshteinDistance(id_compare, self.movie_guid(media.name)))
+					title_diff = abs(String.LevenshteinDistance(id_compare, self.movie_guid(media.name)))
+					if DEBUG: score_explanation += '\n  Found id: %s\n    Our id: %s\ntitle_diff: %d\n     score: %d - %d = %d\n' % (id_compare, self.movie_guid(media.name), title_diff, score, title_diff, score-title_diff)
+					score = score - title_diff
 
 					# Compare years. Give bonus if year difference is 0 or 1. Otherwise subtract points based on the difference in years
 					if media.year and int(media.year) > 1900 and year > 1900:
 						year_diff = abs(int(media.year) - year)
+						if DEBUG: score_explanation += '\nFound year: %d\n  Our year: %s\n year_diff: %d\n     score: %d ' % (year, media.year, year_diff, score)
 
 						if year_diff <= 1:
 							score = score + 10
+							if DEBUG: score_explanation += '+ 10 (bonus) = %d\n' % score
 						else:
 							score = score - (5 * year_diff)
+							if DEBUG: score_explanation += '- (5 * %d) = %d\n' % (year_diff, score)
 
-					if score < 0:
-						Log(" --> YM: Not adding: %s (%d); score: %d" % (title, year, score))
+					if score <= 0:
+						Log(" --> YM: Not adding: %s (%d); score: %d%s" % (title, year, score, score_explanation))
 					else:
-						Log(" --> YM: Adding: %s (%d); score: %d" % (title, year, score))
+						Log(" --> YM: Adding: %s (%d); score: %d%s" % (title, year, score, score_explanation))
 						results.Append(MetadataSearchResult(
 							id = id,
 							name = title,
