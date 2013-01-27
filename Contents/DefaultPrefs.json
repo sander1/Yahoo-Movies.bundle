@@ -1,8 +1,0 @@
-[
-	{
-		"id": "rating",
-		"label": "Use Yahoo Movies rating",
-		"type": "bool",
-		"default": "false"
-	}
-]
