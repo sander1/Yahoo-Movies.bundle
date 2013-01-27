@@ -219,6 +219,13 @@ class YahooMoviesAgent(Agent.Movies):
 			except:
 				pass
 
+			# Rating
+			try:
+				rating_str = html.xpath('//strong[@class="avg-value"]/text()')[0]
+				metadata.rating = float(rating_str) * 2
+			except:
+				metadata.rating = None
+
 			# Directors
 			metadata.directors.clear()
 			try:
