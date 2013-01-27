@@ -19,7 +19,7 @@ RE_DURATION = Regex('(?P<hours>\d+) hours?( (?P<minutes>\d+) minutes?)?')
 RE_JB_FILTER = Regex('\-(banner|brazil|french|int|japanese|quad|russian)\-', Regex.IGNORECASE)
 
 CACHE_TIME = 8640000 # 100 days
-DEBUG = False
+DEBUG = True
 
 ####################################################################################################
 def Start():
@@ -36,7 +36,10 @@ def Start():
 
 	if 'created' not in Dict:
 		Dict['created'] = now
-		for source in ('ym', 'jb', 'ia'): Dict[source] = {}
+		for source in ('ym', 'jb', 'ia'):
+			Dict[source] = {}
+
+		Dict['ym']['skip_media_guid'] = []
 		Dict.Save()
 
 ####################################################################################################
@@ -47,9 +50,20 @@ class YahooMoviesAgent(Agent.Movies):
 	primary_provider = True
 
 	def search(self, results, media, lang):
-		if media.year and int(media.year) > 1900:
+
+		media_guid = self.movie_guid(media.name)
+
+		if media.year and int(media.year) > 1900 and media_guid not in Dict['ym']['skip_media_guid']:
 			try:
-				html = HTML.ElementFromURL(self.movie_url(media.name), headers=REQUEST_HEADERS, sleep=2.0)
+				html = HTML.ElementFromURL(YM_MOVIE_URL % media_guid, headers=REQUEST_HEADERS, sleep=2.0)
+			except:
+				html = None
+
+				if int(media.year) < Datetime.Now().year - 1:
+					Dict['ym']['matches']['skip_media_guid'].append(media_guid)
+					Dict.Save()
+
+			if html:
 				title = html.xpath('//h1[@property="name"]/text()')[0]
 				year = int(html.xpath('//h1[@property="name"]/span[@class="year"]/text()')[0].strip('()'))
 				score = 100
@@ -66,19 +80,17 @@ class YahooMoviesAgent(Agent.Movies):
 						score = score,
 						lang = 'en'
 					))
-			except:
-				pass
 
 		if len(results) == 0:
-			url = self.search_url(media.name)
 			try:
-				if media.year and int(media.year) < Datetime.Now().year:
-					cache_time = CACHE_1MONTH
+				if media.year and int(media.year) < Datetime.Now().year - 1:
+					cache_time = CACHE_TIME
 				else:
 					cache_time = CACHE_1DAY
 
-				html = HTML.ElementFromURL(url, headers=REQUEST_HEADERS, cacheTime=cache_time, sleep=2.0)
+				html = HTML.ElementFromURL(self.search_url(media.name), headers=REQUEST_HEADERS, cacheTime=cache_time, sleep=2.0)
 			except:
+				html = None
 				Log(" --> YM: Error fetching search data from Yahoo Movies: %s" % url)
 
 			if html:
@@ -138,6 +150,7 @@ class YahooMoviesAgent(Agent.Movies):
 		try:
 			html = HTML.ElementFromURL(url, headers=REQUEST_HEADERS, sleep=2.0)
 		except:
+			html = None
 			Log(" --> YM: Error fetching data from Yahoo Movies: %s" % url)
 
 		if html:
@@ -191,10 +204,18 @@ class YahooMoviesAgent(Agent.Movies):
 
 			# Studio
 			try:
-				studio_str = html.xpath('//h4[text()="Distributors"]/parent::td/following-sibling::td/text()')[0].split(',')[0].replace(' Releasing', '')
+				studio_str = html.xpath('//h4[text()="Distributors"]/parent::td/following-sibling::td/text()')[0].split(',')[0].replace(' Releasing', '').replace(' Distribution', '')
 				metadata.studio = studio_str
 			except:
 				metadata.studio = None
+
+			# Country
+			metadata.countries.clear()
+			try:
+				country = html.xpath('//h4[text()="Produced In"]/parent::td/following-sibling::td/text()')[0].split(',')[0].strip()
+				metadata.countries.add(country)
+			except:
+				pass
 
 			# Directors
 			metadata.directors.clear()
@@ -323,13 +344,6 @@ class YahooMoviesAgent(Agent.Movies):
 		return title
 
 
-	def movie_url(self, title):
-
-		title = self.movie_guid(title)
-		url = YM_MOVIE_URL % title
-		return url
-
-
 	def search_url(self, title):
 
 		title = String.Quote(title, usePlus=True)
@@ -380,7 +394,7 @@ class YahooMoviesAgent(Agent.Movies):
 				return None
 
 			if 'content-length' not in headers or int(headers['content-length']) < min_filesize:
-				self.blacklist_poster(source, metadata_id, preview_url, 'Content-Length header missing or filesize less then %d' % min_filesize)
+				self.blacklist_poster(source, metadata_id, preview_url, 'Content-Length header missing or filesize less than %dkb' % (min_filesize/1024))
 				return None
 
 		return preview_img
