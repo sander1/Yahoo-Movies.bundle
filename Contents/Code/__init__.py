@@ -16,10 +16,10 @@ REQUEST_HEADERS = {
 
 RE_TITLE_URL = Regex('[^a-z0-9 ]')
 RE_DURATION = Regex('(?P<hours>\d+) hours?( (?P<minutes>\d+) minutes?)?')
-RE_JB_FILTER = Regex('\-(banner|brazil|french|int|japanese|quad|russian)\-')
+RE_JB_FILTER = Regex('\-(banner|brazil|french|int|japanese|quad|russian)\-', Regex.IGNORECASE)
 
 CACHE_TIME = 8640000 # 100 days
-DEBUG = False
+DEBUG = True
 
 ####################################################################################################
 def Start():
@@ -215,25 +215,17 @@ class YahooMoviesAgent(Agent.Movies):
 
 			preview_url = html.xpath('//img[starts-with(@alt, "Poster of ") and contains(@src, "yimg.com")]/@src')
 			if len(preview_url) == 1:
-				preview_url = preview_url[0]
+				poster_url = 'http://%s' % preview_url[0].rsplit('http://',1)[1]
 
-				if not self.poster_blacklisted(preview_url, 'ym', metadata.id):
-					poster_url = 'http://%s' % preview_url.rsplit('http://',1)[1]
-					headers = HTTP.Request(poster_url, headers=REQUEST_HEADERS, sleep=2.0).headers
+				if poster_url not in metadata.posters:
+					preview_img = self.poster_check('ym', metadata.id, preview_url[0], poster_url)
 
-					if 'content-length' in headers and int(headers['content-length']) > 102400:
+					if preview_img:
+						index = index + 1
+						metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
 						current_posters.append(poster_url)
-
-						if poster_url not in metadata.posters:
-							preview_img = self.poster_check(preview_url, 'ym', metadata.id)
-
-							if preview_img:
-								index = index + 1
-								metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
-							else:
-								current_posters.remove(poster_url)
-					else:
-						self.blacklist_poster(preview_url, 'ym', metadata.id, 'Image is less than 100kb')
+				else:
+					current_posters.append(poster_url)
 
 			if metadata.year >= 1980:
 				html = HTML.ElementFromURL(JB_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
@@ -260,16 +252,52 @@ class YahooMoviesAgent(Agent.Movies):
 
 						preview_url = url.replace('/thumb/', '/large/')
 						poster_url = url.replace('/thumb/', '/full/')
-						current_posters.append(poster_url)
 
 						if poster_url not in metadata.posters:
-							preview_img = self.poster_check(preview_url, 'jb', metadata.id)
+							preview_img = self.poster_check('jb', metadata.id, preview_url)
 
 							if preview_img:
 								index = index + 1
 								metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
-							else:
-								current_posters.remove(poster_url)
+								current_posters.append(poster_url)
+						else:
+							current_posters.append(poster_url)
+
+			if len(current_posters) < 3:
+				poster_html = HTML.ElementFromURL(IA_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
+				id = self.movie_guid(metadata.title, True)
+				posters = poster_html.xpath('//td/font/text()[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ:\'- ", "abcdefghijklmnopqrstuvwxyz"), "%s")]/parent::font/parent::td/following-sibling::td//img/@src' % id)
+				ia_poster_succes = False
+
+				for url in posters:
+					preview_url = 'http://www.impawards.com/%d/%s' % (metadata.year, url)
+					poster_url = 'http://www.impawards.com/%d/posters/%s_xlg.jpg' % (metadata.year, url.split('/imp_')[-1].strip('.jpg'))
+
+					if poster_url not in metadata.posters:
+						preview_img = self.poster_check('ia', metadata.id, preview_url, poster_url)
+
+						if preview_img:
+							index = index + 1
+							metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+							current_posters.append(poster_url)
+							ia_poster_succes = True
+					else:
+						current_posters.append(poster_url)
+						ia_poster_succes = True
+
+				if not ia_poster_succes and len(posters) > 0:
+					preview_url = 'http://www.impawards.com/%d/%s' % (metadata.year, posters[0])
+					poster_url = 'http://www.impawards.com/%d/posters/%s.jpg' % (metadata.year, posters[0].split('/imp_')[-1].strip('.jpg'))
+
+					if poster_url not in metadata.posters:
+						preview_img = self.poster_check('ia', metadata.id, preview_url, poster_url, min_filesize=0)
+
+						if preview_img:
+							index = index + 1
+							metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+							current_posters.append(poster_url)
+					else:
+						current_posters.append(poster_url)
 
 			# Remove unavailable posters
 			for key in metadata.posters.keys():
@@ -303,17 +331,17 @@ class YahooMoviesAgent(Agent.Movies):
 		return url
 
 
-	def poster_check(self, preview_url, source, metadata_id):
+	def poster_check(self, source, metadata_id, preview_url, poster_url=None, min_filesize=102400):
 
-		if not preview_url.endswith('.jpg') or self.poster_blacklisted(preview_url, source, metadata_id):
+		if not preview_url.endswith('.jpg') or (self.poster_blacklisted(source, metadata_id, preview_url) and min_filesize > 0):
 			return None
 
 		if source == 'jb':
-			img = preview_url.rsplit('/',1)[-1].strip('.jpg').lower()
+			img = preview_url.rsplit('/',1)[-1].strip('.jpg')
 
 			jb_filter = RE_JB_FILTER.search(img)
 			if jb_filter:
-				self.blacklist_poster(preview_url, source, metadata_id, 'Match found in JB_POSTER_FILTER: %s' % jb_filter.group(0))
+				self.blacklist_poster(source, metadata_id, preview_url, 'Match found in JB_POSTER_FILTER: %s' % jb_filter.group(0))
 				return None
 
 		preview_img = HTTP.Request(preview_url, headers=REQUEST_HEADERS, sleep=2.0).content
@@ -323,18 +351,36 @@ class YahooMoviesAgent(Agent.Movies):
 			y, x = struct.unpack('>HH', preview_img[i:i+4])
 
 			if x > y:
-				self.blacklist_poster(preview_url, source, metadata_id, 'Horizontally oriented poster')
+				self.blacklist_poster(source, metadata_id, preview_url, 'Horizontally oriented poster')
 				return None
 			if float(x)/float(y) < 0.66:
-				self.blacklist_poster(preview_url, source, metadata_id, 'Poster has strange aspect ratio')
+				self.blacklist_poster(source, metadata_id, preview_url, 'Poster has strange aspect ratio')
 				return None
-			else:
-				return preview_img
 		except:
-			return None
+			pass
+
+		if poster_url:
+			if not poster_url.endswith('.jpg'):
+				self.blacklist_poster(source, metadata_id, preview_url, 'Poster is not a JPEG')
+				return None
+
+			try:
+				headers = HTTP.Request(poster_url, headers=REQUEST_HEADERS, sleep=2.0).headers
+			except:
+				self.blacklist_poster(source, metadata_id, preview_url, 'HTTP error')
+
+			if 'content-type' not in headers or headers['content-type'] != 'image/jpeg':
+				self.blacklist_poster(source, metadata_id, preview_url, 'Content-Type header missing or not \'image/jpeg\'')
+				return None
+
+			if 'content-length' not in headers or int(headers['content-length']) < min_filesize:
+				self.blacklist_poster(source, metadata_id, preview_url, 'Content-Length header missing or filesize less then %d' % min_filesize)
+				return None
+
+		return preview_img
 
 
-	def poster_blacklisted(self, url, source, metadata_id):
+	def poster_blacklisted(self, source, metadata_id, url):
 
 		img = url.rsplit('/',1)[-1].strip('.jpg')
 
@@ -345,7 +391,7 @@ class YahooMoviesAgent(Agent.Movies):
 		return False
 
 
-	def blacklist_poster(self, url, source, metadata_id, reason='Not given'):
+	def blacklist_poster(self, source, metadata_id, url, reason='Not given'):
 
 		img = url.rsplit('/',1)[-1].strip('.jpg')
 
