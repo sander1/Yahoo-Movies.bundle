@@ -1,0 +1,8 @@
+[
+	{
+		"id": "get_posters",
+		"label": "Download posters",
+		"type": "bool",
+		"default": "true"
+	}
+]

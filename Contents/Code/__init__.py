@@ -242,55 +242,92 @@ class YahooMoviesAgent(Agent.Movies):
 				role.role = movie_role.xpath('./td/text()')[0]
 
 			# Posters
+			current_posters = [] # Keep track of available posters
+			index = 0
+
 			if DEBUG:
 				for key in metadata.posters.keys():
 					del metadata.posters[key]
 
-			current_posters = [] # Keep track of available posters
-			index = 0
+			if Prefs['get_posters']:
+				preview_url = html.xpath('//img[starts-with(@alt, "Poster of ") and contains(@src, "yimg.com")]/@src')
+				if len(preview_url) == 1:
+					poster_url = 'http://%s' % preview_url[0].rsplit('http://',1)[1]
 
-			preview_url = html.xpath('//img[starts-with(@alt, "Poster of ") and contains(@src, "yimg.com")]/@src')
-			if len(preview_url) == 1:
-				poster_url = 'http://%s' % preview_url[0].rsplit('http://',1)[1]
+					if poster_url not in metadata.posters:
+						preview_img = self.poster_check('ym', metadata.id, preview_url[0], poster_url)
 
-				if poster_url not in metadata.posters:
-					preview_img = self.poster_check('ym', metadata.id, preview_url[0], poster_url)
-
-					if preview_img:
-						index = index + 1
-						metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+						if preview_img:
+							index = index + 1
+							metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+							current_posters.append(poster_url)
+					else:
 						current_posters.append(poster_url)
-				else:
-					current_posters.append(poster_url)
 
-			if metadata.year >= 1980:
-				html = HTML.ElementFromURL(JB_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
-				details_url = html.xpath('//a[contains(@href, "%s")]/img/parent::a/@href' % metadata.id)
+				if metadata.year >= 1980:
+					html = HTML.ElementFromURL(JB_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
+					details_url = html.xpath('//a[contains(@href, "%s")]/img/parent::a/@href' % metadata.id)
 
-				if len(details_url) < 1:
+					if len(details_url) < 1:
+						id = self.movie_guid(metadata.title, True)
+						details_url = html.xpath('//a[contains(translate(@href, "-", ""), "%s")]/img/parent::a/@href' % id)
+
+					if len(details_url) < 1 and ': ' in metadata.title:
+						id = self.movie_guid(metadata.title.split(': ')[0], True)
+						details_url = html.xpath('//a[contains(translate(@href, "-", ""), "%s")]/img/parent::a/@href' % id)
+
+					if len(details_url) > 0:
+						details_url = details_url[0]
+						if not details_url.startswith('http://'):
+							details_url = 'http://www.joblo.com%s' % details_url
+
+						poster_html = HTML.ElementFromURL(details_url, headers=REQUEST_HEADERS, sleep=2.0)
+
+						for url in reversed(poster_html.xpath('//img[contains(@alt, "Movie Posters")]/@src')):
+							if not url.startswith('http://'):
+								url = 'http://www.joblo.com%s' % url
+
+							preview_url = url.replace('/thumb/', '/large/')
+							poster_url = url.replace('/thumb/', '/full/')
+
+							if poster_url not in metadata.posters:
+								preview_img = self.poster_check('jb', metadata.id, preview_url)
+
+								if preview_img:
+									index = index + 1
+									metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+									current_posters.append(poster_url)
+							else:
+								current_posters.append(poster_url)
+
+				if len(current_posters) < 3:
+					poster_html = HTML.ElementFromURL(IA_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
 					id = self.movie_guid(metadata.title, True)
-					details_url = html.xpath('//a[contains(translate(@href, "-", ""), "%s")]/img/parent::a/@href' % id)
+					posters = poster_html.xpath('//td/font/text()[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ:\'- ", "abcdefghijklmnopqrstuvwxyz"), "%s")]/parent::font/parent::td/following-sibling::td//img/@src' % id)
+					ia_poster_succes = False
 
-				if len(details_url) < 1 and ': ' in metadata.title:
-					id = self.movie_guid(metadata.title.split(': ')[0], True)
-					details_url = html.xpath('//a[contains(translate(@href, "-", ""), "%s")]/img/parent::a/@href' % id)
-
-				if len(details_url) > 0:
-					details_url = details_url[0]
-					if not details_url.startswith('http://'):
-						details_url = 'http://www.joblo.com%s' % details_url
-
-					poster_html = HTML.ElementFromURL(details_url, headers=REQUEST_HEADERS, sleep=2.0)
-
-					for url in reversed(poster_html.xpath('//img[contains(@alt, "Movie Posters")]/@src')):
-						if not url.startswith('http://'):
-							url = 'http://www.joblo.com%s' % url
-
-						preview_url = url.replace('/thumb/', '/large/')
-						poster_url = url.replace('/thumb/', '/full/')
+					for url in posters:
+						preview_url = 'http://www.impawards.com/%d/%s' % (metadata.year, url)
+						poster_url = 'http://www.impawards.com/%d/posters/%s_xlg.jpg' % (metadata.year, url.split('/imp_')[-1].strip('.jpg'))
 
 						if poster_url not in metadata.posters:
-							preview_img = self.poster_check('jb', metadata.id, preview_url)
+							preview_img = self.poster_check('ia', metadata.id, preview_url, poster_url)
+
+							if preview_img:
+								index = index + 1
+								metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
+								current_posters.append(poster_url)
+								ia_poster_succes = True
+						else:
+							current_posters.append(poster_url)
+							ia_poster_succes = True
+
+					if not ia_poster_succes and len(posters) > 0:
+						preview_url = 'http://www.impawards.com/%d/%s' % (metadata.year, posters[0])
+						poster_url = 'http://www.impawards.com/%d/posters/%s.jpg' % (metadata.year, posters[0].split('/imp_')[-1].strip('.jpg'))
+
+						if poster_url not in metadata.posters:
+							preview_img = self.poster_check('ia', metadata.id, preview_url, poster_url, min_filesize=0)
 
 							if preview_img:
 								index = index + 1
@@ -298,42 +335,6 @@ class YahooMoviesAgent(Agent.Movies):
 								current_posters.append(poster_url)
 						else:
 							current_posters.append(poster_url)
-
-			if len(current_posters) < 3:
-				poster_html = HTML.ElementFromURL(IA_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
-				id = self.movie_guid(metadata.title, True)
-				posters = poster_html.xpath('//td/font/text()[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ:\'- ", "abcdefghijklmnopqrstuvwxyz"), "%s")]/parent::font/parent::td/following-sibling::td//img/@src' % id)
-				ia_poster_succes = False
-
-				for url in posters:
-					preview_url = 'http://www.impawards.com/%d/%s' % (metadata.year, url)
-					poster_url = 'http://www.impawards.com/%d/posters/%s_xlg.jpg' % (metadata.year, url.split('/imp_')[-1].strip('.jpg'))
-
-					if poster_url not in metadata.posters:
-						preview_img = self.poster_check('ia', metadata.id, preview_url, poster_url)
-
-						if preview_img:
-							index = index + 1
-							metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
-							current_posters.append(poster_url)
-							ia_poster_succes = True
-					else:
-						current_posters.append(poster_url)
-						ia_poster_succes = True
-
-				if not ia_poster_succes and len(posters) > 0:
-					preview_url = 'http://www.impawards.com/%d/%s' % (metadata.year, posters[0])
-					poster_url = 'http://www.impawards.com/%d/posters/%s.jpg' % (metadata.year, posters[0].split('/imp_')[-1].strip('.jpg'))
-
-					if poster_url not in metadata.posters:
-						preview_img = self.poster_check('ia', metadata.id, preview_url, poster_url, min_filesize=0)
-
-						if preview_img:
-							index = index + 1
-							metadata.posters[poster_url] = Proxy.Preview(preview_img, sort_order=index)
-							current_posters.append(poster_url)
-					else:
-						current_posters.append(poster_url)
 
 			# Remove unavailable posters
 			for key in metadata.posters.keys():
