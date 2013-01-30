@@ -167,7 +167,9 @@ class YahooMoviesAgent(Agent.Movies):
 			# Title, year and summary
 			metadata.title = html.xpath('//h1[@property="name"]/text()')[0]
 			metadata.year = int(html.xpath('//h1[@property="name"]/span[@class="year"]/text()')[0].strip('()'))
-			metadata.summary = html.xpath('//h3[text()="Synopsis"]/parent::div/following-sibling::div/text()')[0]
+
+			summary = html.xpath('//h3[text()="Synopsis"]/parent::div/following-sibling::div/text()')
+			metadata.summary = '\n\n'.join([paragraph.strip() for paragraph in summary])
 
 			# Content rating
 			try:
