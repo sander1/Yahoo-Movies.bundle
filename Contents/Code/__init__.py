@@ -75,9 +75,13 @@ class YahooMoviesAgent(Agent.Movies):
 					if DEBUG: Log(Dict['ym']['skip_media_guid'])
 
 			if html:
-				title = html.xpath('//h1[@property="name"]/text()')[0]
-				year = int(html.xpath('//h1[@property="name"]/span[@class="year"]/text()')[0].strip('()'))
 				score = 100
+				title = html.xpath('//h1[@property="name"]/text()')[0]
+
+				try:
+					year = int(html.xpath('//h1[@property="name"]/span[@class="year"]/text()')[0].strip('()'))
+				except:
+					year = int(media_year)
 
 				# Accept a 1 year difference in release year as a good match. Yahoo Movies shows US
 				# release dates -- international movies sometimes have a US release 1 year later than
@@ -171,9 +175,12 @@ class YahooMoviesAgent(Agent.Movies):
 			try:
 				year = int(html.xpath('//h4[text()="In Theaters"]/parent::td/following-sibling::td//text()')[0].split(', ')[-1])
 			except:
-				year = int(html.xpath('//h1[@property="name"]/span[@class="year"]/text()')[0].strip('()'))
+				try:
+					year = int(html.xpath('//h1[@property="name"]/span[@class="year"]/text()')[0].strip('()'))
+				except:
+					year = None
 
-			if year > 1900 and year <= Datetime.Now().year:
+			if year and year > 1900 and year <= Datetime.Now().year:
 				metadata.year = year
 
 			summary = html.xpath('//h3[text()="Synopsis"]/parent::div/following-sibling::div/text()')
@@ -282,7 +289,7 @@ class YahooMoviesAgent(Agent.Movies):
 					else:
 						current_posters.append(poster_url)
 
-				if metadata.year >= 1980:
+				if metadata.year and metadata.year >= 1980:
 					html = HTML.ElementFromURL(JB_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
 					details_url = html.xpath('//a[contains(@href, "%s")]/img/parent::a/@href' % metadata.id)
 
@@ -319,14 +326,19 @@ class YahooMoviesAgent(Agent.Movies):
 								current_posters.append(poster_url)
 
 				if len(current_posters) < 3:
-					poster_html = HTML.ElementFromURL(IA_POSTER_YEAR % metadata.year, headers=REQUEST_HEADERS, sleep=2.0)
+					if metadata.year:
+						year = metadata.year
+					else:
+						year = Datetime.Now().year
+
+					poster_html = HTML.ElementFromURL(IA_POSTER_YEAR % year, headers=REQUEST_HEADERS, sleep=2.0)
 					id = self.movie_guid(metadata.title, True)
 					posters = poster_html.xpath('//td/font/text()[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ:\'- ", "abcdefghijklmnopqrstuvwxyz"), "%s")]/parent::font/parent::td/following-sibling::td//img/@src' % id)
 					ia_poster_succes = False
 
 					for url in posters:
-						preview_url = 'http://www.impawards.com/%d/%s' % (metadata.year, url)
-						poster_url = 'http://www.impawards.com/%d/posters/%s_xlg.jpg' % (metadata.year, url.split('/imp_')[-1].strip('.jpg'))
+						preview_url = 'http://www.impawards.com/%d/%s' % (year, url)
+						poster_url = 'http://www.impawards.com/%d/posters/%s_xlg.jpg' % (year, url.split('/imp_')[-1].strip('.jpg'))
 
 						if poster_url not in metadata.posters:
 							preview_img = self.poster_check('ia', metadata.id, preview_url, poster_url)
@@ -341,8 +353,8 @@ class YahooMoviesAgent(Agent.Movies):
 							ia_poster_succes = True
 
 					if not ia_poster_succes and len(posters) > 0:
-						preview_url = 'http://www.impawards.com/%d/%s' % (metadata.year, posters[0])
-						poster_url = 'http://www.impawards.com/%d/posters/%s.jpg' % (metadata.year, posters[0].split('/imp_')[-1].strip('.jpg'))
+						preview_url = 'http://www.impawards.com/%d/%s' % (year, posters[0])
+						poster_url = 'http://www.impawards.com/%d/posters/%s.jpg' % (year, posters[0].split('/imp_')[-1].strip('.jpg'))
 
 						if poster_url not in metadata.posters:
 							preview_img = self.poster_check('ia', metadata.id, preview_url, poster_url, min_filesize=0)
