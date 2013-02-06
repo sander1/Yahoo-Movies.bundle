@@ -16,7 +16,7 @@ REQUEST_HEADERS = {
 
 RE_TITLE_URL = Regex('[^a-z0-9 ]')
 RE_DURATION = Regex('(?P<hours>\d+) hours?( (?P<minutes>\d+) minutes?)?')
-RE_JB_FILTER = Regex('\-(banner|brazil|french|int|japanese|quad|russian)\-', Regex.IGNORECASE)
+RE_JB_FILTER = Regex('\-(banner|brazil|dutch|french|int|japan(ese)?|quad|russian)\-', Regex.IGNORECASE)
 
 CACHE_TIME = 8640000 # 100 days
 DEBUG = False
@@ -48,6 +48,7 @@ class YahooMoviesAgent(Agent.Movies):
 	name = 'Yahoo Movies'
 	languages = [Locale.Language.English]
 	primary_provider = True
+	accepts_from = ['com.plexapp.agents.localmedia']
 	contributes_to = ['com.plexapp.agents.imdb']
 
 	def search(self, results, media, lang):
@@ -166,7 +167,14 @@ class YahooMoviesAgent(Agent.Movies):
 		if html:
 			# Title, year and summary
 			metadata.title = html.xpath('//h1[@property="name"]/text()')[0]
-			metadata.year = int(html.xpath('//h1[@property="name"]/span[@class="year"]/text()')[0].strip('()'))
+
+			try:
+				year = int(html.xpath('//h4[text()="In Theaters"]/parent::td/following-sibling::td//text()')[0].split(', ')[-1])
+			except:
+				year = int(html.xpath('//h1[@property="name"]/span[@class="year"]/text()')[0].strip('()'))
+
+			if year > 1900 and year <= Datetime.Now().year:
+				metadata.year = year
 
 			summary = html.xpath('//h3[text()="Synopsis"]/parent::div/following-sibling::div/text()')
 			metadata.summary = '\n\n'.join([paragraph.strip() for paragraph in summary])
