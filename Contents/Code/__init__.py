@@ -50,6 +50,7 @@ class YahooMoviesAgent(Agent.Movies):
 	primary_provider = True
 	accepts_from = ['com.plexapp.agents.localmedia']
 	contributes_to = ['com.plexapp.agents.imdb']
+	fallback_agent = 'com.plexapp.agents.imdb'
 
 	def search(self, results, media, lang):
 
