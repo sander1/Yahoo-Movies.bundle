@@ -1,15 +1,15 @@
 import struct
 
-YM_MOVIE_URL = 'http://movies.yahoo.com/movie/%s/production-details.html'
+YM_MOVIE_URL = 'http://movies.yahoo.com/movie/%s/'
 YM_SEARCH_URL = 'http://movies.search.yahoo.com/search?p=%s&section=listing'
 JB_POSTER_YEAR = 'http://www.joblo.com/upcomingmovies/movieindex.php?year=%d&show_all=true'
 IA_POSTER_YEAR = 'http://www.impawards.com/%d/std.html'
 
 REQUEST_HEADERS = {
-	'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:18.0) Gecko/20100101 Firefox/18.0',
-	'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-	'Accept-Language': 'en-US,en;q=0.5',
-	'Accept-Encoding': 'gzip, deflate',
+	'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/33.0.1750.117 Safari/537.36',
+	'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+	'Accept-Language': 'en-US,en;q=0.8',
+	'Accept-Encoding': 'gzip,deflate,sdch',
 	'DNT': '1',
 	'Connection': 'keep-alive'
 }
@@ -77,10 +77,10 @@ class YahooMoviesAgent(Agent.Movies):
 
 			if html:
 				score = 100
-				title = html.xpath('//h1[@property="name"]/text()')[0]
+				title = html.xpath('//meta[@property="og:title"]/@content')[0]
 
 				try:
-					year = int(html.xpath('//h1[@property="name"]/span[@class="year"]/text()')[0].strip('()'))
+					year = int(html.xpath('//span[@class="year"]/text()')[0].strip('()'))
 				except:
 					year = int(media_year)
 
